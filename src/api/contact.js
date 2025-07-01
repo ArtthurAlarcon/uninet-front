@@ -8,14 +8,20 @@ import { BACK_API } from 'src/config-global';
 
 // ----------------------------------------------------------------------
 
-const axiosService = axios.create({ baseURL: BACK_API });
+const axiosService = axios.create({
+  baseURL: BACK_API,
+  headers: {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  },
+});
 
 // ----------------------------------------------------------------------
 
 export function useGetContacts() {
   const endpoint = endpoints.contact.list;
 
-  const { data, isLoading, error, isValidating } = useSWR(endpoint, fetchier, {
+  const { data, isLoading, error, isValidating, mutate } = useSWR(endpoint, fetchier, {
     revalidateOnFocus: true, // ← Esta es la opción clave
     revalidateIfStale: true,
     revalidateOnReconnect: true,
@@ -34,71 +40,74 @@ export function useGetContacts() {
       contactsError: error,
       contactsValidating: isValidating,
       contactsEmpty: !isLoading && !data?.data.length,
+      mutateContacts: mutate,
     };
-  }, [data?.data, error, isLoading, isValidating]);
+  }, [data?.data, error, isLoading, isValidating, mutate]);
 
   return memoizedValue;
 }
 
-export async function createContact(contactData) {
-  try {
-    const payload = {
-      ...contactData,
-      telefonos: contactData.telefonos || [],
-      emails: contactData.emails || [],
-      direcciones: contactData.direcciones || [],
-      foto_path: contactData.foto ? 'juan.png' : null,
-    };
-
-    const response = await axiosService.post(endpoints.contact.create, payload, {
+// En tu servicio de API (contact.js)
+// En tu archivo API (api/contact.js)
+export const updateContact = async (id, data, config = {}) => {
+  // Si data es FormData (cuando viene del formulario)
+  if (data instanceof FormData) {
+    const response = await axiosService.post(`/api/contactos/actualizar/${id}`, data, {
+      ...config,
       headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error('Error al crear contacto:', error.response?.data || error.message);
-    throw error;
-  }
-}
-
-export async function updateContact(contactId, contactData) {
-  try {
-    const formData = new FormData();
-
-    // Agregar campos básicos
-    Object.keys(contactData).forEach((key) => {
-      if (key !== 'foto' && key !== 'telefonos' && key !== 'emails' && key !== 'direcciones') {
-        formData.append(key, contactData[key]);
-      }
-    });
-
-    // Agregar foto si existe (y es un archivo nuevo)
-    if (contactData.foto && contactData.foto instanceof File) {
-      formData.append('foto', contactData.foto);
-    }
-
-    // Agregar arrays como JSON
-    if (contactData.telefonos) {
-      formData.append('telefonos', JSON.stringify(contactData.telefonos));
-    }
-    if (contactData.emails) {
-      formData.append('emails', JSON.stringify(contactData.emails));
-    }
-    if (contactData.direcciones) {
-      formData.append('direcciones', JSON.stringify(contactData.direcciones));
-    }
-
-    const response = await axios.put(endpoints.contact.update(contactId), formData, {
-      headers: {
+        ...config.headers,
         'Content-Type': 'multipart/form-data',
       },
     });
+    return response.data;
+  }
 
+  // Si data es un objeto normal (para otros usos)
+  const formData = new FormData();
+  Object.keys(data).forEach((key) => {
+    if (Array.isArray(data[key])) {
+      formData.append(key, JSON.stringify(data[key]));
+    } else {
+      formData.append(key, data[key]);
+    }
+  });
+
+  const response = await axiosService.post(`/api/contactos/actualizar/${id}`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const createContact = async (data, config = {}) => {
+  const response = await axiosService.post('/api/contactos', data, config);
+  return response.data;
+};
+
+export function useGetContactById(id) {
+  const endpoint = id ? `/api/contactos/${id}` : null;
+
+  const { data, error, isLoading } = useSWR(endpoint, fetchier, {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  });
+
+  console.log(data?.data);
+
+  return {
+    contact: data?.data, // Asegúrate que coincide con la estructura de tu API
+    isLoading,
+    error,
+  };
+}
+
+export const deleteContact = async (id) => {
+  try {
+    const response = await axios.delete(`${import.meta.env.VITE_BACK_API}/api/contactos/${id}`);
     return response.data;
   } catch (error) {
-    console.error('Error al actualizar contacto:', error);
+    console.error('Error al eliminar contacto:', error);
     throw error;
   }
-}
+};

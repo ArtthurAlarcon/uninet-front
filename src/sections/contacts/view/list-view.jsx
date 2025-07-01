@@ -70,7 +70,7 @@ export default function ListView() {
 
   const confirm = useBoolean();
 
-  const { contacts } = useGetContacts();
+  const { contacts, mutateContacts } = useGetContacts();
 
   const [tableData, setTableData] = useState(contacts || []);
 
@@ -111,16 +111,6 @@ export default function ListView() {
     [table]
   );
 
-  const handleDeleteRow = useCallback(
-    (id) => {
-      const deleteRow = tableData.filter((row) => row.id !== id);
-      setTableData(deleteRow);
-
-      table.onUpdatePageDeleteRow(dataInPage.length);
-    },
-    [dataInPage.length, table, tableData]
-  );
-
   const handleDeleteRows = useCallback(() => {
     const deleteRows = tableData.filter((row) => !table.selected.includes(row.id));
     setTableData(deleteRows);
@@ -134,7 +124,7 @@ export default function ListView() {
 
   const handleEditRow = useCallback(
     (id) => {
-      router.push(paths.dashboard.user.edit(id));
+      router.push(`${paths.contact.root}/${id}/edit`);
     },
     [router]
   );
@@ -207,8 +197,8 @@ export default function ListView() {
                       <UserTableRow
                         key={row.id}
                         row={row}
-                        onDeleteRow={() => handleDeleteRow(row.id)}
-                        onEditRow={() => handleEditRow(row.id)}
+                        onEditRow={() => handleEditRow(row.id_contacto)}
+                        onRefresh={() => mutateContacts()}
                       />
                     ))}
 

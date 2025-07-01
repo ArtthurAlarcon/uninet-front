@@ -14,6 +14,13 @@ axiosInstance.interceptors.response.use(
 
 export default axiosInstance;
 
+const instance = axios.create({ baseURL: BACK_API });
+instance.interceptors.response.use(
+  (res) => res,
+  (error) => Promise.reject((error.response && error.response.data) || 'Something went wrong')
+);
+export { instance };
+
 // ----------------------------------------------------------------------
 
 export const fetcher = async (args) => {
@@ -28,6 +35,25 @@ export const fetchier = async (args) => {
   const [url, config] = Array.isArray(args) ? args : [args];
 
   const res = await axiosService.get(url, { ...config });
+
+  return res.data;
+};
+
+export const fetcherPost = async (args, dataValue) => {
+  const [url, config] = Array.isArray(args) ? args : [args];
+  const accessToken = localStorage.getItem('accessToken');
+
+  const res = await instance.post(
+    url,
+    { dataValue },
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Token: accessToken,
+      },
+      ...config,
+    }
+  );
 
   return res.data;
 };
@@ -63,5 +89,6 @@ export const endpoints = {
     list: '/api/contactos/relaciones',
     create: '/api/contactos',
     update: (id) => `/api/contactos/${id}`,
+    getById: (id) => `/api/contactos/${id}`,
   },
 };

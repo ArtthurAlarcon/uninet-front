@@ -36,24 +36,14 @@ export const contactRoutes = [
           </CompactLayout>
         ),
       },
-      // Ruta para subida masiva
-      // {
-      //   path: 'contacts/upload',
-      //   element: (
-      //     <CompactLayout>
-      //       <ContactUploadPage />
-      //     </CompactLayout>
-      //   ),
-      // },
-      // // Ruta para edición (si es necesaria)
-      // {
-      //   path: 'contacts/:id/edit',
-      //   element: (
-      //     <CompactLayout>
-      //       <ContactEditPage />
-      //     </CompactLayout>
-      //   ),
-      // },
+      {
+        path: '/contacts/:id/edit',
+        element: (
+          <CompactLayout>
+            <ContactCreatePage />
+          </CompactLayout>
+        ),
+      },
     ],
   },
 ];

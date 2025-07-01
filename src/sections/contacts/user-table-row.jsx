@@ -1,14 +1,18 @@
+import { useState } from 'react'; // Añade esta importación
 import PropTypes from 'prop-types';
+import { useSnackbar } from 'notistack';
 
 import Button from '@mui/material/Button';
 import Avatar from '@mui/material/Avatar';
-import Tooltip from '@mui/material/Tooltip';
 import MenuItem from '@mui/material/MenuItem';
 import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
+import { CircularProgress } from '@mui/material';
 import IconButton from '@mui/material/IconButton';
 
 import { useBoolean } from 'src/hooks/use-boolean';
+
+import { deleteContact } from 'src/api/contact';
 
 import Iconify from 'src/components/iconify';
 import { ConfirmDialog } from 'src/components/custom-dialog';
@@ -18,7 +22,7 @@ import UserQuickEditForm from './user-quick-edit-form';
 
 // ----------------------------------------------------------------------
 
-export default function UserTableRow({ row, onEditRow, onDeleteRow }) {
+export default function UserTableRow({ row, onEditRow, onRefresh }) {
   const {
     id_contacto,
     nombre,
@@ -31,6 +35,9 @@ export default function UserTableRow({ row, onEditRow, onDeleteRow }) {
     emails,
     direcciones,
   } = row;
+
+  const [isDeleting, setIsDeleting] = useState(false); // Estado para controlar la carga
+  const { enqueueSnackbar } = useSnackbar();
 
   const confirm = useBoolean();
   const quickEdit = useBoolean();
@@ -55,6 +62,23 @@ export default function UserTableRow({ row, onEditRow, onDeleteRow }) {
     return `${primary.calle} ${primary.numero_exterior}, ${primary.colonia}, ${primary.municipio}`;
   };
 
+  const handleDelete = async () => {
+    setIsDeleting(true); // Activar estado de carga
+
+    try {
+      await deleteContact(id_contacto);
+      enqueueSnackbar('Contacto eliminado correctamente', { variant: 'success' });
+      onRefresh(); // Actualizar la lista
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'Error al eliminar el contacto', {
+        variant: 'error',
+      });
+    } finally {
+      setIsDeleting(false); // Desactivar estado de carga
+      confirm.onFalse(); // Cerrar diálogo
+    }
+  };
+
   return (
     <>
       <TableRow hover key={id_contacto}>
@@ -64,7 +88,7 @@ export default function UserTableRow({ row, onEditRow, onDeleteRow }) {
               alt={`${nombre} ${apellido_paterno}`}
               src={
                 foto_path
-                  ? `/assets/images/contacts/pictures/${foto_path.split('/').pop()}`
+                  ? `${import.meta.env.VITE_BACK_API}/api/contactos/foto/${foto_path}`
                   : '/assets/images/avatar_default.jpg'
               }
               sx={{ width: 48, height: 48 }}
@@ -83,12 +107,6 @@ export default function UserTableRow({ row, onEditRow, onDeleteRow }) {
         <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatAddress()}</TableCell>
 
         <TableCell align="right" sx={{ px: 1, whiteSpace: 'nowrap' }}>
-          <Tooltip title="Editar" placement="top" arrow>
-            <IconButton color={quickEdit.value ? 'inherit' : 'default'} onClick={quickEdit.onTrue}>
-              <Iconify icon="solar:pen-bold" />
-            </IconButton>
-          </Tooltip>
-
           <IconButton color={popover.open ? 'inherit' : 'default'} onClick={popover.onOpen}>
             <Iconify icon="eva:more-vertical-fill" />
           </IconButton>
@@ -127,12 +145,24 @@ export default function UserTableRow({ row, onEditRow, onDeleteRow }) {
 
       <ConfirmDialog
         open={confirm.value}
-        onClose={confirm.onFalse}
+        onClose={() => !isDeleting && confirm.onFalse()} // No permitir cerrar durante eliminación
         title="Eliminar contacto"
         content="¿Estás seguro de que deseas eliminar este contacto?"
         action={
-          <Button variant="contained" color="error" onClick={onDeleteRow}>
-            Eliminar
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            startIcon={
+              isDeleting ? (
+                <CircularProgress size={20} color="inherit" />
+              ) : (
+                <Iconify icon="solar:trash-bin-trash-bold" />
+              )
+            }
+          >
+            {isDeleting ? 'Eliminando...' : 'Eliminar'}
           </Button>
         }
       />
@@ -141,7 +171,7 @@ export default function UserTableRow({ row, onEditRow, onDeleteRow }) {
 }
 
 UserTableRow.propTypes = {
-  onDeleteRow: PropTypes.func,
+  onRefresh: PropTypes.func,
   onEditRow: PropTypes.func,
   row: PropTypes.object,
 };

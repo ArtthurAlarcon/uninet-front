@@ -23,7 +23,7 @@ export const paths = {
   contact: {
     root: ROOTS.CONTACTS,
     create: `${ROOTS.CONTACTS}/create`,
-    delete: `${ROOTS.CONTACTS}/delete`,
     upload: `${ROOTS.CONTACTS}/upload`,
+    edit: (id) => `${ROOTS.CONTACTS}/${id}/edit`, // Añade esta línea
   },
 };

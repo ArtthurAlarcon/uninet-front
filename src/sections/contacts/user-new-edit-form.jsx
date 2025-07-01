@@ -2,7 +2,7 @@ import * as Yup from 'yup';
 import PropTypes from 'prop-types';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -17,22 +17,36 @@ import { Switch, FormControlLabel } from '@mui/material';
 import { paths } from 'src/routes/paths';
 import { RouterLink } from 'src/routes/components';
 
-import { fData } from 'src/utils/format-number';
-
-import { createContact, updateContact } from 'src/api/contact';
+import { createContact, updateContact, useGetContactById } from 'src/api/contact';
 
 import Iconify from 'src/components/iconify';
 import { useSnackbar } from 'src/components/snackbar';
 import FormProvider, { RHFUpload, RHFTextField, RHFAutocomplete } from 'src/components/hook-form'; // Asegúrate de que la ruta
+
+import { useParams, useRouter } from 'src/routes/hooks';
+
+import { LoadingScreen } from 'src/components/loading-screen';
 // ----------------------------------------------------------------------
 
-export default function ContactNewEditForm({ currentContact }) {
-  // const router = useRouter();
+export default function ContactNewEditForm({ currentContact: propContact }) {
+  const params = useParams();
+  const { id } = params;
+  const router = useRouter();
   const { enqueueSnackbar } = useSnackbar();
+
+  const { contact: apiContact, isLoading, error } = useGetContactById(propContact ? null : id);
+  const currentContact = useMemo(() => {
+    if (propContact) return propContact;
+    if (apiContact) return apiContact;
+    return null;
+  }, [propContact, apiContact]);
+
   const [showPhones, setShowPhones] = useState(false);
   const [showEmails, setShowEmails] = useState(false);
   const [showAddresses, setShowAddresses] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Añade este estado
+  const [shouldDeletePhoto, setShouldDeletePhoto] = useState(false);
 
   const ContactSchema = Yup.object().shape({
     nombre: Yup.string().required('Nombre es requerido'),
@@ -123,64 +137,143 @@ export default function ContactNewEditForm({ currentContact }) {
       ),
   });
 
-  const defaultValues = useMemo(
-    () => ({
-      nombre: currentContact?.nombre || '',
-      apellido_paterno: currentContact?.apellido_paterno || '',
-      apellido_materno: currentContact?.apellido_materno || '',
-      // fecha_nacimiento: currentContact?.fecha_nacimiento || null,
-      fecha_nacimiento: currentContact?.fecha_nacimiento || '', // Cambiado de null a ''
-      alias: currentContact?.alias || '',
-      foto: currentContact?.foto || null,
-      telefonos: currentContact?.telefonos || [],
-      emails: currentContact?.emails || [],
-      direcciones: currentContact?.direcciones || [],
-    }),
-    [currentContact]
-  );
-
   const methods = useForm({
     resolver: yupResolver(ContactSchema),
-    defaultValues,
     context: {
-      hasPhone: showPhones,
-      hasEmail: showEmails,
-      hasAddress: showAddresses,
+      hasPhone: showPhones || currentContact?.telefonos?.length > 0,
+      hasEmail: showEmails || currentContact?.emails?.length > 0,
+      hasAddress: showAddresses || currentContact?.direcciones?.length > 0,
     },
   });
 
-  const {
-    watch,
-    control,
-    setValue,
-    handleSubmit,
-    formState: { isSubmitting },
-  } = methods;
+  const { reset, watch, control, setValue, handleSubmit } = methods;
 
   const values = watch();
 
-  const onSubmit = handleSubmit(async (data) => {
+  useEffect(() => {
+    console.log('Datos recibidos:', {
+      propContact,
+      apiContact,
+      isLoading,
+      error,
+    });
+  }, [propContact, apiContact, isLoading, error]);
+
+  // 5. Efecto para cargar datos cuando estén disponibles
+  useEffect(() => {
+    if (!currentContact) {
+      // Modo creación - resetear todo
+      reset({
+        nombre: '',
+        apellido_paterno: '',
+        apellido_materno: '',
+        fecha_nacimiento: '',
+        alias: '',
+        foto: null,
+        telefonos: [],
+        emails: [],
+        direcciones: [],
+      });
+      setSelectedFile(null);
+      setShouldDeletePhoto(false);
+      return;
+    }
+
+    // Modo edición - cargar datos existentes
+    const initialValues = {
+      nombre: currentContact.nombre || '',
+      apellido_paterno: currentContact.apellido_paterno || '',
+      apellido_materno: currentContact.apellido_materno || '',
+      fecha_nacimiento: currentContact.fecha_nacimiento || '',
+      alias: currentContact.alias || '',
+      foto: null,
+      telefonos: currentContact.telefonos || [],
+      emails: currentContact.emails || [],
+      direcciones: currentContact.direcciones || [],
+    };
+
+    reset(initialValues);
+    setSelectedFile(null);
+    setShouldDeletePhoto(false); // Resetear el flag al cargar
+  }, [currentContact, reset]);
+
+  useEffect(() => {
+    if (currentContact) {
+      setShowPhones(currentContact.telefonos?.length > 0);
+      setShowEmails(currentContact.emails?.length > 0);
+      setShowAddresses(currentContact.direcciones?.length > 0);
+    }
+  }, [currentContact]);
+
+  useEffect(
+    () => () => {
+      // Limpiar URLs de objetos Blob creados para previsualización
+      if (selectedFile) {
+        URL.revokeObjectURL(URL.createObjectURL(selectedFile));
+      }
+    },
+    [selectedFile]
+  );
+
+  const onSubmit = handleSubmit(async (formData) => {
+    setIsSubmitting(true);
     try {
-      if (currentContact) {
-        // Actualizar contacto existente
-        await updateContact(currentContact.id, data);
-        enqueueSnackbar('Contacto actualizado con éxito!');
-      } else {
-        // Crear nuevo contacto
-        await createContact(data);
-        enqueueSnackbar('Contacto creado con éxito!');
+      const formDataToSend = new FormData();
+
+      // Agregar campos básicos como strings
+      formDataToSend.append('nombre', formData.nombre || '');
+      formDataToSend.append('apellido_paterno', formData.apellido_paterno || '');
+      formDataToSend.append('apellido_materno', formData.apellido_materno || '');
+      formDataToSend.append('alias', formData.alias || '');
+      formDataToSend.append('shouldDeletePhoto', shouldDeletePhoto.toString());
+
+      // Formatear fecha correctamente (YYYY-MM-DD)
+      const fechaNacimiento = formData.fecha_nacimiento
+        ? new Date(formData.fecha_nacimiento).toISOString().split('T')[0]
+        : '';
+      formDataToSend.append('fecha_nacimiento', fechaNacimiento);
+
+      // Agregar arrays como JSON stringify
+      formDataToSend.append('telefonos', JSON.stringify(formData.telefonos || []));
+      formDataToSend.append('emails', JSON.stringify(formData.emails || []));
+      formDataToSend.append('direcciones', JSON.stringify(formData.direcciones || []));
+
+      // Agregar archivo si existe
+      if (formData.foto instanceof File) {
+        formDataToSend.append('foto', formData.foto);
       }
 
-      // Redirigir al listado después de 1.5 segundos
-      // setTimeout(() => {
-      //   router.push(paths.contact.root);
-      // }, 1500);
-    } catch (error) {
-      console.error(error);
-      enqueueSnackbar(
-        `${error.response?.data?.message}SSS` || 'Ocurrió un error al procesar la solicitud',
-        { variant: 'error' }
-      );
+      // Configurar headers
+      const config = {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      };
+
+      // Verificar datos antes de enviar (para debug)
+      console.log('Datos a enviar:', {
+        nombre: formData.nombre,
+        apellido_paterno: formData.apellido_paterno,
+        // ... otros campos
+      });
+
+      if (currentContact) {
+        // Usamos el nuevo endpoint POST para actualización
+        await updateContact(currentContact.id_contacto, formDataToSend, config);
+        enqueueSnackbar('Contacto actualizado con éxito!', { variant: 'success' });
+      } else {
+        await createContact(formDataToSend, config);
+        enqueueSnackbar('Contacto creado con éxito!', { variant: 'success' });
+      }
+
+      setTimeout(() => router.push(paths.contact.root), 1500);
+    } catch (e) {
+      console.error('Error completo:', e.response?.data || e.message);
+      enqueueSnackbar(`Error al guardar: ${e.response?.data?.message || e.message}`, {
+        variant: 'error',
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   });
 
@@ -198,6 +291,11 @@ export default function ContactNewEditForm({ currentContact }) {
   const handleRemoveFile = () => {
     setSelectedFile(null);
     setValue('foto', null, { shouldValidate: true });
+
+    // Si estamos editando y hay una foto existente
+    if (currentContact?.foto_path) {
+      setShouldDeletePhoto(true);
+    }
   };
 
   const addPhone = () => {
@@ -266,17 +364,21 @@ export default function ContactNewEditForm({ currentContact }) {
     if (newAddresses.length === 0) setShowAddresses(false);
   };
 
+  if (!propContact && isLoading) return <LoadingScreen />;
+
   return (
     <FormProvider methods={methods} onSubmit={onSubmit}>
       <Grid container spacing={3}>
         <Grid xs={12} md={4}>
           <Card sx={{ pt: 5, pb: 5, px: 3 }}>
             <Box sx={{ mb: 5 }}>
-              {selectedFile || currentContact?.foto ? (
+              {/* eslint-disable-next-line no-nested-ternary */}
+              {selectedFile ? (
+                // Foto nueva seleccionada
                 <Box sx={{ position: 'relative' }}>
                   <Box
                     component="img"
-                    src={selectedFile ? URL.createObjectURL(selectedFile) : currentContact?.foto}
+                    src={URL.createObjectURL(selectedFile)}
                     alt="Foto de contacto"
                     sx={{
                       borderRadius: 1,
@@ -286,42 +388,39 @@ export default function ContactNewEditForm({ currentContact }) {
                       objectFit: 'cover',
                     }}
                   />
-                  <IconButton
-                    onClick={handleRemoveFile}
+                  <IconButton onClick={handleRemoveFile}>
+                    <Iconify icon="mingcute:delete-line" width={20} />
+                  </IconButton>
+                </Box>
+              ) : currentContact?.foto_path && !shouldDeletePhoto ? (
+                // Foto existente (solo si no está marcada para borrar)
+                <Box sx={{ position: 'relative' }}>
+                  <Box
+                    component="img"
+                    src={`${import.meta.env.VITE_BACK_API}/api/contactos/foto/${
+                      currentContact.foto_path
+                    }`}
+                    alt="Foto actual"
                     sx={{
-                      position: 'absolute',
-                      top: 8,
-                      right: 8,
-                      backgroundColor: 'background.paper',
-                      '&:hover': {
-                        backgroundColor: 'action.hover',
-                      },
+                      borderRadius: 1,
+                      width: '100%',
+                      height: 'auto',
+                      maxHeight: 300,
+                      objectFit: 'cover',
                     }}
-                  >
+                  />
+                  <IconButton onClick={handleRemoveFile}>
                     <Iconify icon="mingcute:delete-line" width={20} />
                   </IconButton>
                 </Box>
               ) : (
+                // Uploader (cuando no hay foto o se ha borrado)
                 <RHFUpload
                   name="foto"
                   maxSize={3145728}
                   onDrop={handleDrop}
-                  accept={{ 'image/*': ['.jpeg', '.jpg', '.png', '.gif'] }}
-                  helperText={
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        mt: 3,
-                        mx: 'auto',
-                        display: 'block',
-                        textAlign: 'center',
-                        color: 'text.disabled',
-                      }}
-                    >
-                      Formatos permitidos: .jpeg, .jpg, .png, .gif
-                      <br /> Tamaño máximo: {fData(3145728)}
-                    </Typography>
-                  }
+                  accept={{ 'image/*': ['.jpeg', '.jpg', '.png'] }}
+                  helperText="Selecciona una imagen (máx 3MB, formatos: JPEG, JPG, PNG)"
                 />
               )}
             </Box>
